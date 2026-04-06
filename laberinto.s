@@ -12,6 +12,11 @@
 .data
 
 # 1 = wall, 0 = walkable tile
+up_state:    .byte 0
+down_state:  .byte 0
+left_state:  .byte 0
+right_state: .byte 0
+
 maze_data:
     .byte 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
     .byte 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
@@ -45,10 +50,6 @@ maze_data:
 _start:
     li s0, START_X          # Player X
     li s1, START_Y          # Player Y
-    li s2, 0                # Previous UP state
-    li s3, 0                # Previous DOWN state
-    li s4, 0                # Previous LEFT state
-    li s5, 0                # Previous RIGHT state
 
     jal ra, draw_maze
 
@@ -58,61 +59,57 @@ _start:
     jal ra, draw_pixel
 
 game_loop:
-    li t0, D_PAD_0_UP
-    lw t1, 0(t0)
-    bnez t1, handle_up_pressed
-    li s2, 0
+    li a0, D_PAD_0_UP
+    la a1, up_state
+    li a2, 0
+    li a3, -1
+    jal ra, process_button
 
-check_down:
-    li t0, D_PAD_0_DOWN
-    lw t1, 0(t0)
-    bnez t1, handle_down_pressed
-    li s3, 0
+    li a0, D_PAD_0_DOWN
+    la a1, down_state
+    li a2, 0
+    li a3, 1
+    jal ra, process_button
 
-check_left:
-    li t0, D_PAD_0_LEFT
-    lw t1, 0(t0)
-    bnez t1, handle_left_pressed
-    li s4, 0
+    li a0, D_PAD_0_LEFT
+    la a1, left_state
+    li a2, -1
+    li a3, 0
+    jal ra, process_button
 
-check_right:
-    li t0, D_PAD_0_RIGHT
-    lw t1, 0(t0)
-    bnez t1, handle_right_pressed
-    li s5, 0
+    li a0, D_PAD_0_RIGHT
+    la a1, right_state
+    li a2, 1
+    li a3, 0
+    jal ra, process_button
+
     j game_loop
 
-handle_up_pressed:
-    bnez s2, check_down
-    li s2, 1
-    li a0, 0
-    li a1, -1
-    jal ra, try_move
-    j check_down
+# Reads one D-pad button, applies edge detection, and moves once per press.
+# a0 = button address, a1 = address of previous-state byte, a2 = dx, a3 = dy
+process_button:
+    addi sp, sp, -4
+    sw ra, 0(sp)
 
-handle_down_pressed:
-    bnez s3, check_left
-    li s3, 1
-    li a0, 0
-    li a1, 1
-    jal ra, try_move
-    j check_left
+    lw t0, 0(a0)
+    bnez t0, button_pressed
+    sb zero, 0(a1)
+    j process_button_done
 
-handle_left_pressed:
-    bnez s4, check_right
-    li s4, 1
-    li a0, -1
-    li a1, 0
-    jal ra, try_move
-    j check_right
+button_pressed:
+    lbu t1, 0(a1)
+    bnez t1, process_button_done
 
-handle_right_pressed:
-    bnez s5, game_loop
-    li s5, 1
-    li a0, 1
-    li a1, 0
+    li t1, 1
+    sb t1, 0(a1)
+    mv a0, a2
+    mv a1, a3
     jal ra, try_move
-    j game_loop
+
+process_button_done:
+    lw ra, 0(sp)
+    addi sp, sp, 4
+    ret
 
 try_move:
     addi sp, sp, -12
@@ -188,22 +185,25 @@ draw_under_tile_done:
     ret
 
 draw_maze:
-    addi sp, sp, -4
-    sw ra, 0(sp)
+    addi sp, sp, -16
+    sw ra, 12(sp)
+    sw s2, 8(sp)
+    sw s3, 4(sp)
+    sw s4, 0(sp)
 
-    la t0, maze_data
-    li t1, 0
+    la s2, maze_data
+    li s3, 0
 
 draw_maze_row:
     li t2, LED_MATRIX_0_HEIGHT
-    bge t1, t2, draw_exit
-    li t3, 0
+    bge s3, t2, draw_exit
+    li s4, 0
 
 draw_maze_col:
     li t2, LED_MATRIX_0_WIDTH
-    bge t3, t2, next_maze_row
+    bge s4, t2, next_maze_row
 
-    lbu t4, 0(t0)
+    lbu t4, 0(s2)
     bnez t4, maze_wall
     li a2, PATH_COLOR
     j maze_draw_tile
@@ -212,26 +212,16 @@ maze_wall:
     li a2, WALL_COLOR
 
 maze_draw_tile:
-    mv a0, t3
-    mv a1, t1
-    addi sp, sp, -16
-    sw ra, 12(sp)
-    sw t0, 8(sp)
-    sw t1, 4(sp)
-    sw t3, 0(sp)
+    mv a0, s4
+    mv a1, s3
     jal ra, draw_pixel
-    lw t3, 0(sp)
-    lw t1, 4(sp)
-    lw t0, 8(sp)
-    lw ra, 12(sp)
-    addi sp, sp, 16
 
-    addi t0, t0, 1
-    addi t3, t3, 1
+    addi s2, s2, 1
+    addi s4, s4, 1
     j draw_maze_col
 
 next_maze_row:
-    addi t1, t1, 1
+    addi s3, s3, 1
     j draw_maze_row
 
 draw_exit:
@@ -239,8 +229,11 @@ draw_exit:
     li a1, EXIT_Y
     li a2, EXIT_COLOR
     jal ra, draw_pixel
-    lw ra, 0(sp)
-    addi sp, sp, 4
+    lw s4, 0(sp)
+    lw s3, 4(sp)
+    lw s2, 8(sp)
+    lw ra, 12(sp)
+    addi sp, sp, 16
     ret
 
 fill_win_screen:
