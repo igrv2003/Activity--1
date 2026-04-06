@@ -6,8 +6,8 @@
 
 .equ START_X, 1
 .equ START_Y, 1
-.equ EXIT_X,  33
-.equ EXIT_Y,  23
+.equ EXIT_X,  15
+.equ EXIT_Y,  19
 
 .data
 
